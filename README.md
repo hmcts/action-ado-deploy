@@ -47,7 +47,7 @@ GitHub Action that updates a service image tag in a deployment config repo, trig
 
 ### With a tag suffix
 
-If your image copy step appends a date or other identifier to the tag, pass it via `tag_suffix`. For example, with `image_tag: 1.0.0-abc1234` and `tag_suffix: _170326`, the resulting tag written to the values file would be `1.0.0-abc1234_170326`.
+If your image copy step appends a date or other identifier to the tag, pass it via `tag_suffix`. For example, with `image_tag: sha-abc1234` and `tag_suffix: _170326`, the resulting tag written to the values file would be `sha-abc1234_170326`.
 
 ```yaml
 - uses: hmcts/action-ado-deploy@v1
