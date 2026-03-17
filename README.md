@@ -45,6 +45,19 @@ GitHub Action that updates a service image tag in a deployment config repo, trig
     template_parameters: '{"environment": "staging", "service": "my-service"}'
 ```
 
+### With a tag suffix
+
+If your image copy step appends a date or other identifier to the tag, pass it via `tag_suffix`. For example, with `image_tag: 1.0.0-abc1234` and `tag_suffix: _170326`, the resulting tag written to the values file would be `1.0.0-abc1234_170326`.
+
+```yaml
+- uses: hmcts/action-ado-deploy@v1
+  with:
+    service_name: my-service
+    image_tag: sha-abc1234
+    tag_suffix: _170326
+    # ... other inputs
+```
+
 ### Fire-and-forget (don't wait for pipeline)
 
 ```yaml
@@ -83,6 +96,7 @@ GitHub Action that updates a service image tag in a deployment config repo, trig
 | `api_version` | No | `7.0` | Azure DevOps API version |
 | `poll_interval` | No | `30` | Seconds between status checks |
 | `timeout` | No | `1800` | Max seconds to wait for pipeline completion (30 min) |
+| `tag_suffix` | No | `''` | Optional suffix to append to the image tag |
 | `wait` | No | `true` | Whether to wait for the pipeline to complete |
 
 ## Outputs

@@ -61,6 +61,10 @@ inputs:
     required: false
     default: '1800'
     description: 'Max seconds to wait for pipeline completion (default 30 min)'
+  tag_suffix:
+    required: false
+    default: ''
+    description: 'Optional suffix to append to the image tag (e.g. _170326 for date-stamped copies)'
   wait:
     required: false
     default: 'true'
@@ -139,7 +143,7 @@ runs:
         fi
 
         SERVICE="${{ inputs.service_name }}"
-        NEW_TAG="${{ inputs.image_tag }}"
+        NEW_TAG="${{ inputs.image_tag }}${{ inputs.tag_suffix }}"
 
         CURRENT_TAG=$(yq ".services.\"$SERVICE\".image.tag" "$VALUES_FILE")
         if [ "$CURRENT_TAG" = "null" ]; then
