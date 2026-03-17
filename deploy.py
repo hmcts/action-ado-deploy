@@ -27,7 +27,7 @@ def trigger_pipeline(base_url, headers, ref_name, template_parameters, api_versi
         "templateParameters": template_parameters
     }
 
-    print(f"Triggering pipeline...")
+    print("Triggering pipeline...")
     print(f"Template Parameters = {json.dumps(template_parameters, indent=2)}")
 
     response = requests.post(url, headers=headers, json=payload)
