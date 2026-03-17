@@ -1,11 +1,15 @@
 import json
-import os
-import tempfile
 
 import pytest
 import responses
 
-from deploy import get_required_env, main, monitor_pipeline, trigger_pipeline, write_output
+from deploy import (
+    get_required_env,
+    main,
+    monitor_pipeline,
+    trigger_pipeline,
+    write_output,
+)
 
 
 ADO_BASE_URL = "https://dev.azure.com/test-org/test-project/_apis/pipelines/123"

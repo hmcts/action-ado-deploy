@@ -61,6 +61,10 @@ inputs:
     required: false
     default: '1800'
     description: 'Max seconds to wait for pipeline completion (default 30 min)'
+  tag_suffix:
+    required: false
+    default: ''
+    description: 'Optional suffix to append to the image tag (e.g. _170326 for date-stamped copies)'
   wait:
     required: false
     default: 'true'
@@ -139,16 +143,18 @@ runs:
         fi
 
         SERVICE="${{ inputs.service_name }}"
-        NEW_TAG="${{ inputs.image_tag }}"
+        NEW_TAG="${{ inputs.image_tag }}${{ inputs.tag_suffix }}"
 
-        CURRENT_TAG=$(yq ".services.\"$SERVICE\".image.tag" "$VALUES_FILE")
+        export YQ_SERVICE="$SERVICE"
+        CURRENT_TAG=$(yq '.services.[strenv(YQ_SERVICE)].image.tag' "$VALUES_FILE")
         if [ "$CURRENT_TAG" = "null" ]; then
           echo "::error::Service '$SERVICE' not found in ${{ inputs.values_file }}"
           exit 1
         fi
 
         echo "Updating $SERVICE image tag: $CURRENT_TAG -> $NEW_TAG"
-        yq -i ".services.\"$SERVICE\".image.tag = \"$NEW_TAG\"" "$VALUES_FILE"
+        export YQ_NEW_TAG="$NEW_TAG"
+        yq -i '.services.[strenv(YQ_SERVICE)].image.tag = strenv(YQ_NEW_TAG)' "$VALUES_FILE"
 
         cd "$WORK_DIR"
         git config user.name "github-actions[bot]"
