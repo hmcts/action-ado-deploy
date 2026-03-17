@@ -1,0 +1,188 @@
+name: 'Deployment via ADO Pipeline'
+description: 'Updates a service image tag in the deployment repository, then triggers and monitors an ADO deployment pipeline'
+inputs:
+  service_name:
+    required: true
+    description: 'Service name as it appears in services_values.yml (e.g. service-cp-crime-hearing-case-event-subscription)'
+  image_tag:
+    required: true
+    description: 'New image tag to set for the service'
+  target_repository:
+    required: false
+    default: 'hmcts/cp-vp-aks-deploy'
+    description: 'GitHub repository containing the deployment config (owner/repo)'
+  target_branch:
+    required: false
+    default: 'main'
+    description: 'Branch to update in the target repository'
+  values_file:
+    required: false
+    default: 'vp-config/services_values.yml'
+    description: 'Path to services_values.yml within the target repository'
+  app_id:
+    required: false
+    default: ''
+    description: 'GitHub App ID for generating an installation token to push to the target repository'
+  app_private_key:
+    required: false
+    default: ''
+    description: 'GitHub App private key for generating an installation token'
+  deploy_key:
+    required: false
+    default: ''
+    description: 'SSH deploy key for authentication to the target repository'
+  ado_org:
+    required: false
+    default: 'hmcts-cpp'
+    description: 'Azure DevOps organisation name'
+  ado_project:
+    required: false
+    default: 'cpp-apps'
+    description: 'Azure DevOps project name'
+  pipeline_id:
+    required: true
+    description: 'ID of the Azure DevOps deployment pipeline to trigger'
+  ado_pat:
+    required: true
+    description: 'Azure DevOps Personal Access Token (PAT) used for authentication'
+  template_parameters:
+    required: true
+    description: 'JSON string of key-value pairs to pass as template parameters to the deployment pipeline'
+  ref_name:
+    required: false
+    default: 'refs/heads/main'
+    description: 'Git reference (branch) to use in the triggered pipeline'
+  api_version:
+    required: false
+    default: '7.0'
+    description: 'Azure DevOps API version'
+  poll_interval:
+    required: false
+    default: '30'
+    description: 'Seconds between status checks'
+  timeout:
+    required: false
+    default: '1800'
+    description: 'Max seconds to wait for pipeline completion (default 30 min)'
+  wait:
+    required: false
+    default: 'true'
+    description: 'Whether to wait for the ADO pipeline to complete (true) or fire-and-forget (false)'
+outputs:
+  run_id:
+    description: 'The ID of the triggered pipeline run'
+    value: ${{ steps.deploy.outputs.run_id }}
+  result:
+    description: 'Pipeline result (succeeded/failed/canceled)'
+    value: ${{ steps.deploy.outputs.result }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate auth inputs
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.app_id }}" ] && [ -z "${{ inputs.deploy_key }}" ]; then
+          echo "::error::Either 'app_id' + 'app_private_key' or 'deploy_key' must be provided"
+          exit 1
+        fi
+        if [ -n "${{ inputs.app_id }}" ] && [ -z "${{ inputs.app_private_key }}" ]; then
+          echo "::error::'app_private_key' is required when 'app_id' is provided"
+          exit 1
+        fi
+
+    - name: Resolve target repository parts
+      if: inputs.app_id != ''
+      id: repo-parts
+      shell: bash
+      run: |
+        REPO="${{ inputs.target_repository }}"
+        echo "owner=${REPO%%/*}" >> "$GITHUB_OUTPUT"
+        echo "name=${REPO##*/}" >> "$GITHUB_OUTPUT"
+
+    - name: Generate GitHub App token
+      if: inputs.app_id != ''
+      id: generate-token
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ inputs.app_id }}
+        private-key: ${{ inputs.app_private_key }}
+        owner: ${{ steps.repo-parts.outputs.owner }}
+        repositories: ${{ steps.repo-parts.outputs.name }}
+
+    - name: Setup SSH for deploy key
+      if: inputs.deploy_key != ''
+      shell: bash
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ inputs.deploy_key }}" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+        git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
+
+    - name: Update service image tag
+      shell: bash
+      env:
+        GITHUB_APP_TOKEN: ${{ steps.generate-token.outputs.token }}
+      run: |
+        WORK_DIR=$(mktemp -d)
+        trap 'rm -rf "$WORK_DIR"' EXIT
+
+        if [ -n "${{ inputs.deploy_key }}" ]; then
+          REPO_URL="git@github.com:${{ inputs.target_repository }}.git"
+        else
+          REPO_URL="https://x-access-token:${GITHUB_APP_TOKEN}@github.com/${{ inputs.target_repository }}.git"
+        fi
+
+        git clone --depth 1 --branch "${{ inputs.target_branch }}" "$REPO_URL" "$WORK_DIR"
+
+        VALUES_FILE="$WORK_DIR/${{ inputs.values_file }}"
+        if [ ! -f "$VALUES_FILE" ]; then
+          echo "::error::Values file not found: ${{ inputs.values_file }}"
+          exit 1
+        fi
+
+        SERVICE="${{ inputs.service_name }}"
+        NEW_TAG="${{ inputs.image_tag }}"
+
+        CURRENT_TAG=$(yq ".services.\"$SERVICE\".image.tag" "$VALUES_FILE")
+        if [ "$CURRENT_TAG" = "null" ]; then
+          echo "::error::Service '$SERVICE' not found in ${{ inputs.values_file }}"
+          exit 1
+        fi
+
+        echo "Updating $SERVICE image tag: $CURRENT_TAG -> $NEW_TAG"
+        yq -i ".services.\"$SERVICE\".image.tag = \"$NEW_TAG\"" "$VALUES_FILE"
+
+        cd "$WORK_DIR"
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add "${{ inputs.values_file }}"
+
+        if git diff --cached --quiet; then
+          echo "No changes to commit (tag already up to date)"
+        else
+          git commit -m "chore: update $SERVICE image tag to $NEW_TAG"
+          git push origin "${{ inputs.target_branch }}"
+          echo "Successfully updated and pushed tag change"
+        fi
+
+    - name: Cleanup SSH key
+      if: always() && inputs.deploy_key != ''
+      shell: bash
+      run: rm -f ~/.ssh/deploy_key
+
+    - name: Trigger and monitor ADO deployment pipeline
+      id: deploy
+      run: python3 ${{ github.action_path }}/deploy.py
+      shell: bash
+      env:
+        INPUT_ADO_ORG: ${{ inputs.ado_org }}
+        INPUT_ADO_PROJECT: ${{ inputs.ado_project }}
+        INPUT_PIPELINE_ID: ${{ inputs.pipeline_id }}
+        INPUT_ADO_PAT: ${{ inputs.ado_pat }}
+        INPUT_TEMPLATE_PARAMETERS: ${{ inputs.template_parameters }}
+        INPUT_REF_NAME: ${{ inputs.ref_name }}
+        INPUT_API_VERSION: ${{ inputs.api_version }}
+        INPUT_POLL_INTERVAL: ${{ inputs.poll_interval }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_WAIT: ${{ inputs.wait }}
