@@ -17,14 +17,8 @@ def trigger_pipeline(base_url, headers, ref_name, template_parameters, api_versi
     url = f"{base_url}/runs?api-version={api_version}"
 
     payload = {
-        "resources": {
-            "repositories": {
-                "self": {
-                    "refName": ref_name
-                }
-            }
-        },
-        "templateParameters": template_parameters
+        "resources": {"repositories": {"self": {"refName": ref_name}}},
+        "templateParameters": template_parameters,
     }
 
     print("Triggering pipeline...")
@@ -66,7 +60,9 @@ def monitor_pipeline(base_url, run_id, headers, api_version, poll_interval, time
         response = requests.get(url, headers=headers)
 
         if response.status_code != 200:
-            print(f"API request failed with status {response.status_code}: {response.text}")
+            print(
+                f"API request failed with status {response.status_code}: {response.text}"
+            )
             sys.exit(1)
 
         data = response.json()
@@ -140,9 +136,13 @@ def main():
         "Authorization": f"Basic {auth}",
     }
 
-    base_url = f"https://dev.azure.com/{ado_org}/{ado_project}/_apis/pipelines/{pipeline_id}"
+    base_url = (
+        f"https://dev.azure.com/{ado_org}/{ado_project}/_apis/pipelines/{pipeline_id}"
+    )
 
-    run_id = trigger_pipeline(base_url, headers, ref_name, template_parameters, api_version)
+    run_id = trigger_pipeline(
+        base_url, headers, ref_name, template_parameters, api_version
+    )
     print(f"Pipeline run ID: {run_id}")
     write_output("run_id", run_id)
 
@@ -150,7 +150,9 @@ def main():
         print("Wait disabled, pipeline triggered successfully")
         return
 
-    result = monitor_pipeline(base_url, run_id, headers, api_version, poll_interval, timeout)
+    result = monitor_pipeline(
+        base_url, run_id, headers, api_version, poll_interval, timeout
+    )
     write_output("result", result)
 
     if result == "succeeded":
